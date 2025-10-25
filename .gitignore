@@ -1,0 +1,4 @@
+.vercel
+
+backend/.venv
+frontend/node_modules
