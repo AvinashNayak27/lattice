@@ -121,7 +121,7 @@ export default function Markets({ pairs, onPairSelect }: MarketsProps) {
   useEffect(() => {
     const fetchHistoricalPrices = async () => {
       try {
-        const res = await fetch('https://84de2d582240.ngrok-free.app/api/price-feeds/last-price', {
+        const res = await fetch('https://avantis-backend.vercel.app/api/price-feeds/last-price', {
           headers: {
             'ngrok-skip-browser-warning': 'true'
           }
@@ -165,53 +165,29 @@ export default function Markets({ pairs, onPairSelect }: MarketsProps) {
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -20 }}
-      className="space-y-6"
+      className="space-y-6 mb-20 md:mb-6"
     >
-      {/* Market Stats */}
-      {/* <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <StatsCard
-          title="Total Markets"
-          value={pairs.length.toString()}
-          icon={<TrendingUp className="w-5 h-5" />}
-        />
-        <StatsCard
-          title="24h Volume"
-          value="$12.4M"
-          icon={<ArrowUpRight className="w-5 h-5" />}
-        />
-        <StatsCard
-          title="Total TVL"
-          value="$45.2M"
-          icon={<TrendingUp className="w-5 h-5" />}
-        />
-        <StatsCard
-          title="Active Traders"
-          value="1,234"
-          icon={<TrendingUp className="w-5 h-5" />}
-        />
-      </div> */}
-
-      {/* Search Bar */}
-      <div className="card">
-        <div className="relative">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-black/40" />
-          <input
-            type="text"
-            placeholder="Search markets (ETH, BTC, etc.)"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-12 pr-4 py-3 bg-black/5 border border-black/10 rounded-2xl text-sm text-black placeholder:text-black/40 focus:outline-none focus:ring-2 focus:ring-black/20 transition-all"
-          />
-        </div>
-      </div>
-
       {/* Markets Grid */}
       <div className="card">
-        <div className="flex justify-between items-center mb-4">
-          <h3 className="text-lg font-bold text-black">Available Markets</h3>
-          <span className="text-xs text-black/50">
-            Showing {displayedPairs.length} of {filteredPairs.length}
-          </span>
+        <div className="flex flex-col gap-4 mb-6">
+          <div className="flex justify-between items-center">
+            <h3 className="text-lg font-bold text-black">Available Markets</h3>
+            <span className="text-xs text-black/50">
+              Showing {displayedPairs.length} of {filteredPairs.length}
+            </span>
+          </div>
+          
+          {/* Search Bar */}
+          <div className="relative">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-black/40" />
+            <input
+              type="text"
+              placeholder="Search markets (ETH, BTC, etc.)"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-12 pr-4 py-3 bg-black/5 border border-black/10 rounded-2xl text-sm text-black placeholder:text-black/40 focus:outline-none focus:ring-2 focus:ring-black/20 transition-all"
+            />
+          </div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
           {displayedPairs.map((pair: PairInfo) => {
@@ -329,19 +305,5 @@ export default function Markets({ pairs, onPairSelect }: MarketsProps) {
         </div>
       </div> */}
     </motion.div>
-  )
-}
-
-function StatsCard({ title, value, icon }: any) {
-  return (
-    <div className="card">
-      <div className="flex justify-between items-start mb-2">
-        <p className="text-xs text-black/60">{title}</p>
-        <div className="p-2 rounded-xl bg-black text-white">
-          {icon}
-        </div>
-      </div>
-      <p className="text-xl font-bold text-black">{value}</p>
-    </div>
   )
 }

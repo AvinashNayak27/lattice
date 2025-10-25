@@ -56,7 +56,7 @@ sleep 3
 echo ""
 echo -e "${GREEN}✅ Avantis Trader is starting!${NC}"
 echo ""
-echo "Backend: https://84de2d582240.ngrok-free.app"
+echo "Backend: https://avantis-backend.vercel.app"
 echo "Frontend: http://localhost:5173"
 echo ""
 echo "Check the new terminal windows for logs."

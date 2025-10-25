@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Set
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -382,3 +382,214 @@ async def get_last_price_by_pair(pair_index: int):
         logger.error(f"❌ Unexpected error fetching price: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Internal server error: {e}") from e
 
+
+
+# --- Top Trades Proxy Route ---
+@app.get("/api/portfolio/top-trades/{address}")
+async def get_top_trades(address: str):
+    """
+    Proxy endpoint to fetch top trades for a user from Avantis API.
+    Enriches each trade with 'from' and 'to' info from pair metadata.
+    """
+    logger.info(f"🏆 Fetching top trades for address: {address}")
+
+    try:
+        # Step 1: Fetch top trades from Avantis API
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(
+                f"https://api.avantisfi.com/v2/history/portfolio/top/{address}",
+                timeout=10.0,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+
+        portfolio = data.get("portfolio", []) or []
+        logger.info(f"✅ Got {len(portfolio)} top trades for {address}")
+
+        # Step 2: Extract all unique pair indices
+        unique_pair_indices: Set[int] = set()
+        for t in portfolio:
+            try:
+                pidx = t.get("event", {}).get("args", {}).get("t", {}).get("pairIndex")
+                if pidx is not None:
+                    unique_pair_indices.add(int(pidx))
+            except Exception:
+                continue
+
+        logger.info(f"📊 Found {len(unique_pair_indices)} unique pair indices: {unique_pair_indices}")
+
+        # Step 3: Fetch all pairs once, then filter for only the ones we need
+        all_pairs = await get_pairs()  # returns dict[str|int, PairInfoWithData]
+        pair_map: Dict[str, Any] = {}
+        for idx in unique_pair_indices:
+            key = str(idx)
+            pair_info = all_pairs.get(key) or all_pairs.get(idx)
+            if pair_info:
+                pair_map[key] = pair_info
+
+        # Step 4: Enrich each trade with its pair's from/to
+        enriched_portfolio = []
+        for trade in portfolio:
+            pidx = trade.get("event", {}).get("args", {}).get("t", {}).get("pairIndex")
+            if pidx is not None:
+                key = str(int(pidx))
+                info = pair_map.get(key)
+                if info:
+                    # Convert PairInfoWithData (Pydantic model) safely to dict
+                    info_dict = (
+                        info.model_dump() if hasattr(info, "model_dump")
+                        else info.dict() if hasattr(info, "dict")
+                        else dict(info)
+                    )
+                trade["pairInfo"] = {
+        "from": info_dict.get("from") or info_dict.get("from_"),
+        "to": info_dict.get("to") or info_dict.get("to_"),
+    }
+
+            enriched_portfolio.append(trade)
+
+        logger.info(f"✅ Enriched {len(enriched_portfolio)} trades with pair info")
+
+        return enriched_portfolio
+
+    except httpx.HTTPStatusError as e:
+        logger.error(f"❌ Avantis API error: {e}")
+        raise HTTPException(status_code=e.response.status_code, detail=str(e))
+    except Exception as e:
+        logger.exception("💥 Unexpected error while fetching top trades")
+        raise HTTPException(status_code=500, detail="Internal Server Error")
+
+
+# --- Portfolio History Proxy Route ---
+@app.get("/api/portfolio/history/{address}/{page_number}")
+async def get_portfolio_history(address: str, page_number: int):
+    """
+    Proxy endpoint to fetch portfolio history for a user from Avantis API with pagination.
+    Enriches each trade with 'from' and 'to' info from pair metadata.
+    """
+    logger.info(f"📜 Fetching portfolio history for address: {address}, page: {page_number}")
+
+    try:
+        # Step 1: Fetch portfolio history from Avantis API
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(
+                f"https://api.avantisfi.com/v2/history/portfolio/history/{address}/{page_number}",
+                timeout=10.0,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+
+        portfolio = data.get("portfolio", []) or []
+        logger.info(f"✅ Got {len(portfolio)} trades for {address} on page {page_number}")
+
+        # Step 2: Extract all unique pair indices
+        unique_pair_indices: Set[int] = set()
+        for t in portfolio:
+            try:
+                pidx = t.get("event", {}).get("args", {}).get("t", {}).get("pairIndex")
+                if pidx is not None:
+                    unique_pair_indices.add(int(pidx))
+            except Exception:
+                continue
+
+        logger.info(f"📊 Found {len(unique_pair_indices)} unique pair indices: {unique_pair_indices}")
+
+        # Step 3: Fetch all pairs once, then filter for only the ones we need
+        all_pairs = await get_pairs()  # returns dict[str|int, PairInfoWithData]
+        pair_map: Dict[str, Any] = {}
+        for idx in unique_pair_indices:
+            key = str(idx)
+            pair_info = all_pairs.get(key) or all_pairs.get(idx)
+            if pair_info:
+                pair_map[key] = pair_info
+
+        # Step 4: Enrich each trade with its pair's from/to
+        enriched_portfolio = []
+        for trade in portfolio:
+            pidx = trade.get("event", {}).get("args", {}).get("t", {}).get("pairIndex")
+            if pidx is not None:
+                key = str(int(pidx))
+                info = pair_map.get(key)
+                if info:
+                    # Convert PairInfoWithData (Pydantic model) safely to dict
+                    info_dict = (
+                        info.model_dump() if hasattr(info, "model_dump")
+                        else info.dict() if hasattr(info, "dict")
+                        else dict(info)
+                    )
+                    trade["pairInfo"] = {
+                        "from": info_dict.get("from") or info_dict.get("from_"),
+                        "to": info_dict.get("to") or info_dict.get("to_"),
+                    }
+
+            enriched_portfolio.append(trade)
+
+        logger.info(f"✅ Enriched {len(enriched_portfolio)} trades with pair info")
+
+        return {
+            "portfolio": enriched_portfolio,
+            "page": page_number,
+            "hasMore": len(portfolio) > 0  # Simple heuristic: if we got data, there might be more
+        }
+
+    except httpx.HTTPStatusError as e:
+        logger.error(f"❌ Avantis API error: {e}")
+        raise HTTPException(status_code=e.response.status_code, detail=str(e))
+    except Exception as e:
+        logger.exception("💥 Unexpected error while fetching portfolio history")
+        raise HTTPException(status_code=500, detail="Internal Server Error")
+
+
+# --- Portfolio Stats Proxy Routes ---
+@app.get("/api/portfolio/profit-loss/{address}")
+async def get_portfolio_profit_loss(address: str):
+    """
+    Proxy endpoint to fetch portfolio profit/loss data for a user from Avantis API.
+    """
+    logger.info(f"📊 Fetching profit/loss data for address: {address}")
+
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(
+                f"https://api.avantisfi.com/v1/history/portfolio/profit-loss/{address}",
+                timeout=10.0,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+
+        logger.info(f"✅ Successfully fetched profit/loss data for {address}")
+        return data
+
+    except httpx.HTTPStatusError as e:
+        logger.error(f"❌ Avantis API error: {e}")
+        raise HTTPException(status_code=e.response.status_code, detail=str(e))
+    except Exception as e:
+        logger.exception("💥 Unexpected error while fetching profit/loss data")
+        raise HTTPException(status_code=500, detail="Internal Server Error")
+
+
+@app.get("/api/portfolio/win-rate/{address}")
+async def get_portfolio_win_rate(address: str):
+    """
+    Proxy endpoint to fetch portfolio win rate data for a user from Avantis API.
+    """
+    logger.info(f"🎯 Fetching win rate data for address: {address}")
+
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(
+                f"https://api.avantisfi.com/v1/history/portfolio/win-rate/{address}",
+                timeout=10.0,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+
+        logger.info(f"✅ Successfully fetched win rate data for {address}")
+        return data
+
+    except httpx.HTTPStatusError as e:
+        logger.error(f"❌ Avantis API error: {e}")
+        raise HTTPException(status_code=e.response.status_code, detail=str(e))
+    except Exception as e:
+        logger.exception("💥 Unexpected error while fetching win rate data")
+        raise HTTPException(status_code=500, detail="Internal Server Error")

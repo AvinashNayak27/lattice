@@ -5,6 +5,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import BottomSheet from '../components/BottomSheet'
 import TradingViewWidget from '../components/TradingViewWidget'
 import { useAccount } from 'wagmi'
+import { formatUnits } from 'viem'
 
 interface MarketDetailProps {
   pairs: any[]
@@ -23,6 +24,40 @@ interface MarketDetailProps {
   setSl: (val: string) => void
   loading: boolean
   onPairSelect: (index: number) => void
+  isZeroFee: boolean
+  setIsZeroFee: (val: boolean) => void
+  usdcBalance: bigint | undefined
+}
+
+function fullLossLiquidationPrice({
+  entryPrice,
+  collateral,
+  leverage,
+  side = 'long',
+  zeroFeeTrade = false,
+  fees = 0
+}: {
+  entryPrice: number,
+  collateral: number,
+  leverage: number,
+  side?: 'long' | 'short',
+  zeroFeeTrade?: boolean,
+  fees?: number
+}): number {
+  // Step 1: Determine opening fee
+  const openingFeeBps = zeroFeeTrade ? 0 : 0.00045; // 4.5 bps
+  const positionSize = collateral * leverage;
+  const openingFee = positionSize * openingFeeBps;
+
+  // Step 2: Total fees (opening + any additional)
+  const totalFees = openingFee + fees;
+
+  // Step 3: Compute liquidation price using leverage-adjusted formula
+  if (side === 'long') {
+    return entryPrice * (1 - 1 / leverage + totalFees / (collateral * leverage));
+  } else {
+    return entryPrice * (1 + 1 / leverage - totalFees / (collateral * leverage));
+  }
 }
 
 export default function MarketDetail({
@@ -41,7 +76,10 @@ export default function MarketDetail({
   sl,
   setSl,
   loading,
-  onPairSelect
+  onPairSelect,
+  isZeroFee,
+  setIsZeroFee,
+  usdcBalance
 }: MarketDetailProps) {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -68,7 +106,7 @@ export default function MarketDetail({
       try {
         if (!pair) return
 
-        const response = await fetch(`https://84de2d582240.ngrok-free.app/api/price-feeds/last-price/${pairIndex}`, {
+        const response = await fetch(`https://avantis-backend.vercel.app/api/price-feeds/last-price/${pairIndex}`, {
           headers: {
             'ngrok-skip-browser-warning': '1'
           }
@@ -418,11 +456,35 @@ export default function MarketDetail({
             </div>
           </div>
 
+          {/* Zero Fee Toggle */}
+          <div className="p-4 bg-blue-500/10 rounded-2xl border border-blue-200">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-semibold text-blue-600 text-sm">Zero Fee Trading</p>
+                <p className="text-xs text-blue-500/70">Higher leverage, no trading fees</p>
+              </div>
+              <button
+                onClick={() => setIsZeroFee(!isZeroFee)}
+                className={`relative w-12 h-6 rounded-full transition-colors ${
+                  isZeroFee ? 'bg-blue-600' : 'bg-gray-300'
+                }`}
+              >
+                <div
+                  className={`absolute top-0.5 w-5 h-5 bg-white rounded-full transition-transform ${
+                    isZeroFee ? 'translate-x-6' : 'translate-x-0.5'
+                  }`}
+                />
+              </button>
+            </div>
+          </div>
+
           {/* Collateral Input */}
           <div>
             <div className="flex justify-between items-center mb-2">
               <label className="text-sm font-semibold text-black">Collateral (USDC)</label>
-              <span className="text-xs text-black/50">Balance: 1,000 USDC</span>
+              <span className="text-xs text-black/50">
+                Balance: {usdcBalance !== undefined ? `${parseFloat(formatUnits(usdcBalance, 6)).toFixed(2)} USDC` : 'Loading...'}
+              </span>
             </div>
             <input
               type="number"
@@ -494,10 +556,25 @@ export default function MarketDetail({
             <div className="flex justify-between text-sm">
               <span className="text-black/60">Liquidation Price</span>
               <span className="font-semibold text-red-600">
-                ${price ? (isLong ? (price * 0.9) : (price * 1.1)).toLocaleString(undefined, { maximumFractionDigits: 2 }) : '—'}
+                ${fullLossLiquidationPrice({
+                  entryPrice: price ?? 0,
+                  collateral: Number(collateral),
+                  leverage: Number(leverage),
+                  side: isLong ? 'long' : 'short',
+                  zeroFeeTrade: isZeroFee
+                }).toLocaleString(undefined, { maximumFractionDigits: 2 })}
               </span>
             </div>
           </div>
+
+          {/* Zero Fee Trading Notice */}
+          {isZeroFee && (
+            <div className="p-3 bg-yellow-500/10 rounded-xl border border-yellow-200">
+              <p className="text-xs text-yellow-700">
+                <strong>Zero Fee Trading:</strong> Pay no fees when you lose, only pay a portion of fees when you profit
+              </p>
+            </div>
+          )}
 
           {/* Confirm Button */}
           <button

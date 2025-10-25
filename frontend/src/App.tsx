@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { BrowserRouter as Router, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom'
 import { ConnectButton } from '@rainbow-me/rainbowkit'
-import { useAccount, useSendTransaction, useDisconnect, useWaitForTransactionReceipt } from 'wagmi'
+import { useAccount, useSendTransaction, useDisconnect, useWaitForTransactionReceipt, useReadContract } from 'wagmi'
+import { formatUnits } from 'viem'
 import axios from 'axios'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
@@ -24,6 +25,29 @@ import MarketDetail from './pages/MarketDetail'
 import Earn from './pages/Earn'
 import Profile from './pages/Profile'
 import Portfolio from './pages/Portfolio'
+import sdk from "@farcaster/miniapp-sdk";
+
+// Environment variables
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'https://avantis-backend.vercel.app'
+
+// USDC Contract Constants
+const USDC_ADDRESS = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913' // USDC on Base
+const USDC_ABI = [
+  {
+    "inputs": [{"name": "account", "type": "address"}],
+    "name": "balanceOf",
+    "outputs": [{"name": "", "type": "uint256"}],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "decimals",
+    "outputs": [{"name": "", "type": "uint8"}],
+    "stateMutability": "view",
+    "type": "function"
+  }
+] as const
 
 // Types
 type PairInfo = {
@@ -98,7 +122,7 @@ function OnboardingExperience({ onComplete }: { onComplete: () => void }) {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.3 }}
-          className="text-2xl md:text-3xl font-bold text-black mb-4"
+          className="text-3xl sm:text-2xl md:text-3xl font-bold text-black mb-4"
         >
           {currentStep.title}
         </motion.h2>
@@ -171,6 +195,84 @@ function OnboardingExperience({ onComplete }: { onComplete: () => void }) {
   )
 }
 
+// Custom ConnectButton component
+function CustomConnectButton() {
+  return (
+    <ConnectButton.Custom>
+      {({
+        account,
+        chain,
+        openAccountModal,
+        openChainModal,
+        openConnectModal,
+        authenticationStatus,
+        mounted,
+      }) => {
+        const ready = mounted && authenticationStatus !== 'loading';
+        const connected =
+          ready &&
+          account &&
+          chain &&
+          (!authenticationStatus || authenticationStatus === 'authenticated');
+
+        return (
+          <div
+            {...(!ready && {
+              'aria-hidden': true,
+              style: {
+                opacity: 0,
+                pointerEvents: 'none',
+                userSelect: 'none',
+              },
+            })}
+          >
+            {(() => {
+              if (!connected) {
+                return (
+                  <button 
+                    onClick={openConnectModal} 
+                    type="button"
+                    className="btn-primary flex items-center gap-2 px-4 py-4 text-sm font-semibold"
+                  >
+                    <Wallet className="w-4 h-4" />
+                    Connect Wallet
+                  </button>
+                );
+              }
+
+              if (chain.unsupported) {
+                return (
+                  <button 
+                    onClick={openChainModal} 
+                    type="button"
+                    className="btn-danger flex items-center gap-2 px-4 py-4 text-sm font-semibold"
+                  >
+                    <AlertCircle className="w-4 h-4" />
+                    Wrong Network
+                  </button>
+                );
+              }
+
+              return (
+                <div className="flex items-center gap-2">
+                  <button 
+                    onClick={openAccountModal} 
+                    type="button"
+                    className="btn-primary flex items-center gap-2 px-4 py-4 text-sm font-semibold"
+                  >
+                    <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                    {account.displayName}
+                  </button>
+                </div>
+              );
+            })()}
+          </div>
+        );
+      }}
+    </ConnectButton.Custom>
+  );
+}
+
 // Navigation button component
 function NavButton({ to, icon, label, isActive }: { to: string; icon: React.ReactNode; label: string; isActive: boolean }) {
   return (
@@ -209,6 +311,17 @@ function AppContent() {
   const { disconnect } = useDisconnect()
   const location = useLocation()
 
+  // USDC Balance Hook
+  const { data: usdcBalance } = useReadContract({
+    address: USDC_ADDRESS as `0x${string}`,
+    abi: USDC_ABI,
+    functionName: 'balanceOf',
+    args: address ? [address] : undefined,
+    query: {
+      enabled: !!address,
+    },
+  })
+
   // State
   const [pairs, setPairs] = useState<PairInfo[]>([])
   const [selectedPairIndex, setSelectedPairIndex] = useState<number | null>(null)
@@ -220,14 +333,28 @@ function AppContent() {
   const [sl, setSl] = useState<string>('0')
   const [leverageMin, setLeverageMin] = useState<number | null>(null)
   const [leverageMax, setLeverageMax] = useState<number | null>(null)
+  const [isZeroFee, setIsZeroFee] = useState<boolean>(false)
   const [loading, setLoading] = useState<boolean>(false)
   const [trades, setTrades] = useState<any[]>([])
   const [pendingOrders, setPendingOrders] = useState<any[]>([])
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [realtimePrices, setRealtimePrices] = useState<Record<string, number>>({})
+
   const [showOnboarding, setShowOnboarding] = useState<boolean>(() => {
     return !localStorage.getItem('lattice_onboarding_seen')
   })
+
+
+  useEffect(() => {
+    const init = async () => {
+      await sdk.actions.ready({
+        disableNativeGestures: true,
+      });
+      const isInMiniApp = await sdk.isInMiniApp();
+      console.log('isInMiniApp', isInMiniApp);
+    };
+    init();
+  }, []);
 
   const addNotification = (type: 'success' | 'error' | 'info' | 'pending' | 'confirming' | 'preparing', message: string, txHash?: string, id?: string) => {
     const notifId = id || Math.random().toString(36).substr(2, 9)
@@ -262,7 +389,7 @@ function AppContent() {
   useEffect(() => {
     const run = async () => {
       try {
-        const res = await axios.get('https://84de2d582240.ngrok-free.app/pairs', {
+        const res = await axios.get(`${BACKEND_URL}/pairs`, {
           headers: {
             'ngrok-skip-browser-warning': 'true'
           }
@@ -296,13 +423,13 @@ function AppContent() {
     }
   }
 
-  // Fetch price
+  // Fetch price and update leverage constraints
   useEffect(() => {
     const sel = pairs.find((p) => p.index === selectedPairIndex)
     const leverages = sel?.raw?.leverages
     if (leverages) {
-      const min = Number(leverages.minLeverage) || 1
-      const max = Number(leverages.maxLeverage) || 75
+      const min = isZeroFee ? (Number(leverages.pnlMinLeverage) || 75) : (Number(leverages.minLeverage) || 1)
+      const max = isZeroFee ? (Number(leverages.pnlMaxLeverage) || 500) : (Number(leverages.maxLeverage) || 75)
       setLeverageMin(min)
       setLeverageMax(max)
       const levNum = Number(leverage)
@@ -352,7 +479,7 @@ function AppContent() {
     return () => {
       if (interval) window.clearInterval(interval)
     }
-  }, [pairs, selectedPairIndex, isLong])
+  }, [pairs, selectedPairIndex, isLong, isZeroFee])
 
   // Fetch trades
   useEffect(() => {
@@ -362,7 +489,7 @@ function AppContent() {
 
     const load = async () => {
       try {
-        const res = await axios.get('https://84de2d582240.ngrok-free.app/trades', { 
+        const res = await axios.get(`${BACKEND_URL}/trades`, { 
           params: { trader_address: address },
           headers: { 'ngrok-skip-browser-warning': 'true' }
         })
@@ -455,7 +582,7 @@ function AppContent() {
       addNotification('preparing', 'Preparing transaction...', undefined, notifId)
 
       const bodyWithTraderAddr = { ...body, trader_address: address }
-      const res = await axios.post(`https://84de2d582240.ngrok-free.app${path}`, bodyWithTraderAddr, {
+      const res = await axios.post(`${BACKEND_URL}${path}`, bodyWithTraderAddr, {
         headers: { 'ngrok-skip-browser-warning': 'true' }
       })
       const tx = res.data as { to?: `0x${string}`; data?: `0x${string}`; value?: string | number | bigint }
@@ -503,7 +630,7 @@ function AppContent() {
       leverage: Number(leverage),
       tp: Number(tp),
       sl: Number(sl),
-      order_type: 'MARKET',
+      order_type: isZeroFee ? 'MARKET_ZERO_FEE' : 'MARKET',
       slippage_percentage: 1
     }
     if (selPair) {
@@ -621,24 +748,24 @@ function AppContent() {
           <motion.header
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="sticky top-0 z-40 bg-white/90 backdrop-blur-2xl border-b border-black/5 px-4 py-3"
+            className="mobile-header px-4 py-3"
           >
             <div className="flex items-center justify-between">
               <div>
-                <h1 className="text-xl font-bold text-black flex items-center gap-2">
+                <h1 className="text-3xl font-bold text-black flex items-center gap-2">
                   <Network className="w-6 h-6" />
                   Lattice
                 </h1>
-                <p className="text-[10px] text-black/50 mt-0.5">A web of positions, insights, reputation</p>
+                <p className="text-[12px] text-black/50 mt-0.5">A web of positions, insights, reputation</p>
               </div>
               <div className="flex items-center gap-2">
-                <ConnectButton />
+                <CustomConnectButton/>
               </div>
             </div>
           </motion.header>
 
           {/* Mobile Content */}
-          <div className="mobile-container py-6">
+          <div className="mobile-container pt-20 pb-2">
             <AnimatePresence mode="wait">
               <Routes>
                 <Route path="/" element={<Navigate to="/markets" replace />} />
@@ -666,6 +793,9 @@ function AppContent() {
                     setSl={setSl}
                     loading={loading}
                     onPairSelect={setSelectedPairIndex}
+                    isZeroFee={isZeroFee}
+                    setIsZeroFee={setIsZeroFee}
+                    usdcBalance={usdcBalance}
                   />
                 } />
                 <Route path="/portfolio" element={
@@ -723,8 +853,8 @@ function AppContent() {
           {/* Desktop Sidebar */}
           <div className="fixed left-0 top-0 h-screen w-64 glass-card m-4 p-6 flex flex-col rounded-3xl">
             <div className="mb-8">
-              <h1 className="text-2xl font-bold text-black flex items-center gap-2">
-                <Network className="w-7 h-7" />
+              <h1 className="text-3xl sm:text-2xl font-bold text-black flex items-center gap-2">
+                <Network className="w-8 h-8 sm:w-7 sm:h-7" />
                 Lattice
               </h1>
               <p className="text-xs text-black/60 mt-2">A web of positions, insights, reputation</p>
@@ -769,7 +899,7 @@ function AppContent() {
           <div className="ml-80 mr-8 py-8">
             <div className="flex justify-between items-center mb-8">
               <div>
-                <h2 className="text-2xl font-bold text-black">
+                <h2 className="text-3xl sm:text-2xl font-bold text-black">
                   {currentPath === '/markets' && 'Markets'}
                   {currentPath === '/trade' && 'Trade'}
                   {currentPath === '/portfolio' && 'Portfolio'}
@@ -785,7 +915,7 @@ function AppContent() {
                 </p>
               </div>
               <div className="flex items-center gap-2">
-                <ConnectButton />
+                <CustomConnectButton />
                 {isConnected && (
                   <button
                     onClick={() => disconnect()}
@@ -824,6 +954,9 @@ function AppContent() {
                     setSl={setSl}
                     loading={loading}
                     onPairSelect={setSelectedPairIndex}
+                    isZeroFee={isZeroFee}
+                    setIsZeroFee={setIsZeroFee}
+                    usdcBalance={usdcBalance}
                   />
                 } />
                 <Route path="/portfolio" element={

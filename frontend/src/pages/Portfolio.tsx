@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from 'framer-motion'
-import { Wallet, TrendingUp, RefreshCw, X, ArrowUpRight, ArrowDownRight, Edit3, Check } from 'lucide-react'
+import { Wallet, TrendingUp, RefreshCw, X, ArrowUpRight, ArrowDownRight, Edit3, Check, Eye } from 'lucide-react'
 import { useState } from 'react'
 import { calculatePnL } from '../utils/pnlCalculations'
 
@@ -29,6 +29,7 @@ export default function Portfolio({
   const [editingTpSl, setEditingTpSl] = useState<Record<string, { tp: string; sl: string }>>({})
   const [pnlDetailsModal, setPnlDetailsModal] = useState<{ show: boolean, data: any }>({ show: false, data: null })
   const [showTpSlEditor, setShowTpSlEditor] = useState<Record<string, boolean>>({})
+  const [expandedPosition, setExpandedPosition] = useState<string | null>(null)
 
   const getRealtimePrice = (pairIndex: number): number | null => {
     const pair = pairs.find((p: any) => p.index === pairIndex);
@@ -67,7 +68,7 @@ export default function Portfolio({
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -20 }}
-      className="space-y-6"
+      className="space-y-6 mb-20 md:mb-6"
     >
       {!isConnected ? (
         <div className="card text-center py-12">
@@ -78,7 +79,7 @@ export default function Portfolio({
       ) : (
         <>
           {/* Portfolio Stats */}
-          <div className="grid grid-cols-2 md:grid-cols-1 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <StatsCard
               title="Portfolio Value"
               value={`$${portfolioValue.toLocaleString(undefined, { maximumFractionDigits: 2 })}`}
@@ -194,7 +195,7 @@ export default function Portfolio({
                 <p className="text-sm">No open positions</p>
               </div>
             ) : (
-              <div className="space-y-4">
+              <div className="space-y-3">
                 {trades.map((t: any) => {
                   const pidx = t.pairIndex;
                   const tidx = t.index;
@@ -232,18 +233,23 @@ export default function Portfolio({
                   const displayNetPnlPercent = pnlData ? (pnlData.type === 'nonZeroFeePerp' ? (pnlData as any).netPnlPercent : (pnlData as any).pnlPercent) : undefined;
 
                   return (
-                    <div key={key} className="p-4 bg-black/5 rounded-2xl">
-                      {/* Header Section */}
-                      <div className="flex justify-between items-start mb-3">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 flex-wrap mb-2">
-                            <h4 className="text-base font-bold text-black">{getPairName(pidx)}</h4>
-                            <span className={`px-2 py-1 rounded-lg text-xs font-semibold ${isLong ? 'bg-green-500/20 text-green-700' : 'bg-red-500/20 text-red-700'}`}>
+                    <div key={key} className="bg-black/5 rounded-2xl overflow-hidden">
+                      {/* Compact 2-Row Display */}
+                      <div 
+                        className="p-3 sm:p-4 cursor-pointer hover:bg-black/10 transition-colors"
+                        onClick={() => setExpandedPosition(expandedPosition === key ? null : key)}
+                      >
+                        {/* Row 1: Pair Name, Direction, Current Price */}
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            <h4 className="text-sm sm:text-base font-bold text-black">{getPairName(pidx)}</h4>
+                            <span className={`px-2 py-0.5 rounded-lg text-xs font-semibold ${isLong ? 'bg-green-500/20 text-green-700' : 'bg-red-500/20 text-red-700'}`}>
                               {isLong ? 'Long' : 'Short'}
                             </span>
+                            <span className="text-xs text-black/60">#{tidx}</span>
                           </div>
                           {currentPrice !== null && (
-                            <div className="flex items-center gap-2 px-2.5 py-1 bg-white/50 rounded-lg w-fit">
+                            <div className="flex items-center gap-2 px-2 py-1 bg-white/50 rounded-lg">
                               <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
                               <span className="text-xs font-semibold text-black">
                                 ${currentPrice.toLocaleString(undefined, { maximumFractionDigits: 6 })}
@@ -251,123 +257,153 @@ export default function Portfolio({
                             </div>
                           )}
                         </div>
-                        <button
-                          onClick={() => onCloseTrade(pidx, tidx)}
-                          disabled={loading}
-                          className="btn-danger px-3 py-1.5 text-xs whitespace-nowrap ml-2"
-                        >
-                          Close
-                        </button>
-                      </div>
 
-                      {/* Stats Row */}
-                      <div className="flex items-center gap-2 mb-3 flex-wrap">
-                        <span className="text-xs text-black/60">#{tidx}</span>
-                        <span className="text-xs text-black/60">•</span>
-                        <span className="text-xs font-semibold text-black">{leverage.toFixed(2)}x</span>
-                        {pnlData && displayNetPnl !== undefined && displayNetPnlPercent !== undefined && (
-                          <>
-                            <span className="text-xs text-black/60">•</span>
-                            <span
-                              onClick={() => setPnlDetailsModal({ show: true, data: pnlData })}
-                              className={`px-2 py-0.5 rounded-lg text-xs font-semibold cursor-pointer hover:opacity-80 transition-opacity ${displayNetPnl >= 0 ? 'bg-green-500/20 text-green-700' : 'bg-red-500/20 text-red-700'}`}
-                            >
-                              {displayNetPnl >= 0 ? '+' : ''}{displayNetPnlPercent.toFixed(2)}% (${displayNetPnl.toFixed(2)})
-                            </span>
-                          </>
-                        )}
-                      </div>
-
-                      {/* Position Info Grid */}
-                      <div className="grid grid-cols-2 gap-3 p-3 bg-white/30 rounded-xl mb-3">
-                        <InfoItem label="Collateral" value={`$${collateral.toLocaleString(undefined, { maximumFractionDigits: 2 })}`} />
-                        <InfoItem label="Position Size" value={`$${positionSize.toLocaleString(undefined, { maximumFractionDigits: 2 })}`} />
-                        <InfoItem label="Entry" value={`$${entry.toLocaleString(undefined, { maximumFractionDigits: 6 })}`} />
-                        {liq && <InfoItem label="Liquidation" value={`$${liq.toLocaleString(undefined, { maximumFractionDigits: 6 })}`} />}
-                      </div>
-
-                      {/* TP/SL Section */}
-                      <div className="border-t border-black/10 pt-3">
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-xs font-semibold text-black/70">Take Profit & Stop Loss</span>
-                          <button
-                            onClick={() => setShowTpSlEditor(prev => ({ ...prev, [key]: !prev[key] }))}
-                            className="p-1.5 hover:bg-black/5 rounded-lg transition-colors"
-                          >
-                            {showTpSlEditor[key] ? (
-                              <X className="w-4 h-4 text-black/60" />
-                            ) : (
-                              <Edit3 className="w-4 h-4 text-black/60" />
+                        {/* Row 2: Collateral, PnL, Close Button */}
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-4">
+                            <div>
+                              <span className="text-xs text-black/50">Collateral</span>
+                              <p className="text-sm font-semibold text-black">${collateral.toLocaleString(undefined, { maximumFractionDigits: 2 })}</p>
+                            </div>
+                            {pnlData && displayNetPnl !== undefined && displayNetPnlPercent !== undefined && (
+                              <div className="flex items-center gap-2">
+                                <div
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setPnlDetailsModal({ show: true, data: pnlData });
+                                  }}
+                                  className={`px-2 py-1 rounded-lg text-xs font-semibold cursor-pointer hover:opacity-80 transition-opacity ${displayNetPnl >= 0 ? 'bg-green-500/20 text-green-700' : 'bg-red-500/20 text-red-700'}`}
+                                >
+                                  {displayNetPnl >= 0 ? '+' : ''}{displayNetPnlPercent.toFixed(2)}% (${displayNetPnl.toFixed(2)})
+                                </div>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setPnlDetailsModal({ show: true, data: pnlData });
+                                  }}
+                                  className="p-1 hover:bg-black/10 rounded-lg transition-colors"
+                                  title="View PnL Details"
+                                >
+                                  <Eye className="w-3 h-3 text-black/60" />
+                                </button>
+                              </div>
                             )}
+                          </div>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onCloseTrade(pidx, tidx);
+                            }}
+                            disabled={loading}
+                            className="btn-danger px-3 py-1.5 text-xs whitespace-nowrap"
+                          >
+                            Close
                           </button>
                         </div>
-
-                        {!showTpSlEditor[key] ? (
-                          // Display Mode
-                          <div className="grid grid-cols-2 gap-3">
-                            <div className="p-2 bg-white/30 rounded-lg">
-                              <p className="text-xs text-black/50 mb-0.5">TP</p>
-                              <p className="text-sm font-semibold text-green-700">
-                                {currentTp > 0 ? `$${currentTp.toLocaleString(undefined, { maximumFractionDigits: 6 })}` : 'Not set'}
-                              </p>
-                            </div>
-                            <div className="p-2 bg-white/30 rounded-lg">
-                              <p className="text-xs text-black/50 mb-0.5">SL</p>
-                              <p className="text-sm font-semibold text-red-700">
-                                {currentSl > 0 ? `$${currentSl.toLocaleString(undefined, { maximumFractionDigits: 6 })}` : 'Not set'}
-                              </p>
-                            </div>
-                          </div>
-                        ) : (
-                          // Edit Mode
-                          <AnimatePresence>
-                            <motion.div
-                              initial={{ opacity: 0, height: 0 }}
-                              animate={{ opacity: 1, height: 'auto' }}
-                              exit={{ opacity: 0, height: 0 }}
-                              className="space-y-3"
-                            >
-                              <div className="grid grid-cols-2 gap-3">
-                                <div>
-                                  <label className="text-xs text-black/60 mb-1.5 block">Take Profit</label>
-                                  <input
-                                    type="number"
-                                    value={editingTpSl[key]?.tp ?? ''}
-                                    onChange={(e) => setEditingTpSl(prev => ({ ...prev, [key]: { ...prev[key], tp: e.target.value } }))}
-                                    className="input-field text-sm"
-                                    placeholder="Enter TP"
-                                    step="0.01"
-                                  />
-                                </div>
-                                <div>
-                                  <label className="text-xs text-black/60 mb-1.5 block">Stop Loss</label>
-                                  <input
-                                    type="number"
-                                    value={editingTpSl[key]?.sl ?? ''}
-                                    onChange={(e) => setEditingTpSl(prev => ({ ...prev, [key]: { ...prev[key], sl: e.target.value } }))}
-                                    className="input-field text-sm"
-                                    placeholder="Enter SL"
-                                    step="0.01"
-                                  />
-                                </div>
-                              </div>
-                              <button
-                                onClick={() => {
-                                  const tpVal = editingTpSl[key]?.tp && editingTpSl[key]?.tp !== '' ? Math.round(Number(editingTpSl[key].tp) * 1e10) : 0;
-                                  const slVal = editingTpSl[key]?.sl && editingTpSl[key]?.sl !== '' ? Math.round(Number(editingTpSl[key].sl) * 1e10) : 0;
-                                  onUpdateTpSl(pidx, tidx, tpVal, slVal);
-                                  setShowTpSlEditor(prev => ({ ...prev, [key]: false }));
-                                }}
-                                disabled={loading}
-                                className="btn-primary w-full flex items-center justify-center gap-2"
-                              >
-                                <Check className="w-4 h-4" />
-                                Update TP/SL
-                              </button>
-                            </motion.div>
-                          </AnimatePresence>
-                        )}
                       </div>
+
+                      {/* Expanded Details */}
+                      <AnimatePresence>
+                        {expandedPosition === key && (
+                          <motion.div
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: 'auto' }}
+                            exit={{ opacity: 0, height: 0 }}
+                            className="border-t border-black/10 p-3 sm:p-4 bg-white/30"
+                          >
+                            {/* Position Details */}
+                            <div className="grid grid-cols-2 gap-3 mb-4">
+                              <InfoItem label="Position Size" value={`$${positionSize.toLocaleString(undefined, { maximumFractionDigits: 2 })}`} />
+                              <InfoItem label="Entry Price" value={`$${entry.toLocaleString(undefined, { maximumFractionDigits: 6 })}`} />
+                              <InfoItem label="Leverage" value={`${leverage.toFixed(2)}x`} />
+                              {liq && <InfoItem label="Liquidation" value={`$${liq.toLocaleString(undefined, { maximumFractionDigits: 6 })}`} />}
+                            </div>
+
+                            {/* TP/SL Section */}
+                            <div className="border-t border-black/10 pt-3">
+                              <div className="flex items-center justify-between mb-3">
+                                <span className="text-sm font-semibold text-black/70">Take Profit & Stop Loss</span>
+                                <button
+                                  onClick={() => setShowTpSlEditor(prev => ({ ...prev, [key]: !prev[key] }))}
+                                  className="p-1.5 hover:bg-black/5 rounded-lg transition-colors"
+                                >
+                                  {showTpSlEditor[key] ? (
+                                    <X className="w-4 h-4 text-black/60" />
+                                  ) : (
+                                    <Edit3 className="w-4 h-4 text-black/60" />
+                                  )}
+                                </button>
+                              </div>
+
+                              {!showTpSlEditor[key] ? (
+                                // Display Mode
+                                <div className="grid grid-cols-2 gap-3">
+                                  <div className="p-3 bg-white/50 rounded-lg">
+                                    <p className="text-xs text-black/50 mb-1">Take Profit</p>
+                                    <p className="text-sm font-semibold text-green-700">
+                                      {currentTp > 0 ? `$${currentTp.toLocaleString(undefined, { maximumFractionDigits: 6 })}` : 'Not set'}
+                                    </p>
+                                  </div>
+                                  <div className="p-3 bg-white/50 rounded-lg">
+                                    <p className="text-xs text-black/50 mb-1">Stop Loss</p>
+                                    <p className="text-sm font-semibold text-red-700">
+                                      {currentSl > 0 ? `$${currentSl.toLocaleString(undefined, { maximumFractionDigits: 6 })}` : 'Not set'}
+                                    </p>
+                                  </div>
+                                </div>
+                              ) : (
+                                // Edit Mode
+                                <AnimatePresence>
+                                  <motion.div
+                                    initial={{ opacity: 0, height: 0 }}
+                                    animate={{ opacity: 1, height: 'auto' }}
+                                    exit={{ opacity: 0, height: 0 }}
+                                    className="space-y-3"
+                                  >
+                                    <div className="grid grid-cols-2 gap-3">
+                                      <div>
+                                        <label className="text-xs text-black/60 mb-1.5 block">Take Profit</label>
+                                        <input
+                                          type="number"
+                                          value={editingTpSl[key]?.tp ?? ''}
+                                          onChange={(e) => setEditingTpSl(prev => ({ ...prev, [key]: { ...prev[key], tp: e.target.value } }))}
+                                          className="input-field text-sm"
+                                          placeholder="Enter TP"
+                                          step="0.01"
+                                        />
+                                      </div>
+                                      <div>
+                                        <label className="text-xs text-black/60 mb-1.5 block">Stop Loss</label>
+                                        <input
+                                          type="number"
+                                          value={editingTpSl[key]?.sl ?? ''}
+                                          onChange={(e) => setEditingTpSl(prev => ({ ...prev, [key]: { ...prev[key], sl: e.target.value } }))}
+                                          className="input-field text-sm"
+                                          placeholder="Enter SL"
+                                          step="0.01"
+                                        />
+                                      </div>
+                                    </div>
+                                    <button
+                                      onClick={() => {
+                                        const tpVal = editingTpSl[key]?.tp && editingTpSl[key]?.tp !== '' ? Math.round(Number(editingTpSl[key].tp) * 1e10) : 0;
+                                        const slVal = editingTpSl[key]?.sl && editingTpSl[key]?.sl !== '' ? Math.round(Number(editingTpSl[key].sl) * 1e10) : 0;
+                                        onUpdateTpSl(pidx, tidx, tpVal, slVal);
+                                        setShowTpSlEditor(prev => ({ ...prev, [key]: false }));
+                                      }}
+                                      disabled={loading}
+                                      className="btn-primary w-full flex items-center justify-center gap-2"
+                                    >
+                                      <Check className="w-4 h-4" />
+                                      Update TP/SL
+                                    </button>
+                                  </motion.div>
+                                </AnimatePresence>
+                              )}
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
                     </div>
                   );
                 })}
@@ -377,7 +413,7 @@ export default function Portfolio({
 
           {/* Pending Orders */}
           <div className="card">
-            <h3 className="text-lg font-bold text-black mb-4">Pending Limit Orders</h3>
+            <h3 className="text-lg font-bold text-black mb-4">Pending Limit Orders ({pendingOrders.length})</h3>
             {pendingOrders.length === 0 ? (
               <div className="text-center py-8 text-black/40">
                 <RefreshCw className="w-12 h-12 mx-auto mb-3 opacity-50" />
@@ -396,39 +432,48 @@ export default function Portfolio({
                   return (
                     <div
                       key={`${pidx}:${tidx}:${i}`}
-                      className="flex justify-between items-center p-4 bg-black/5 rounded-2xl"
+                      className="p-3 sm:p-4 bg-black/5 rounded-2xl"
                     >
-                      <div>
-                        <div className="flex items-center gap-3">
-                          <h4 className="font-semibold text-sm text-black">{getPairName(pidx)}</h4>
-                          {currentPrice !== null && (
-                            <div className="flex items-center gap-2 px-2 py-1 bg-black/5 rounded-xl">
-                              <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
-                              <span className="text-xs font-semibold text-black">
-                                ${currentPrice.toLocaleString(undefined, { maximumFractionDigits: 6 })}
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2 mt-1">
-                          <span className={`px-2 py-1 rounded-xl text-xs font-semibold ${isLong ? 'bg-green-500/20 text-green-700' : 'bg-red-500/20 text-red-700'}`}>
+                      {/* Row 1: Pair Name, Direction, Current Price */}
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <h4 className="text-sm sm:text-base font-bold text-black">{getPairName(pidx)}</h4>
+                          <span className={`px-2 py-0.5 rounded-lg text-xs font-semibold ${isLong ? 'bg-green-500/20 text-green-700' : 'bg-red-500/20 text-red-700'}`}>
                             {isLong ? 'Long' : 'Short'}
                           </span>
                           <span className="text-xs text-black/60">#{tidx}</span>
                           {lev && <span className="text-xs text-black/60">{lev}x</span>}
                         </div>
-                        <div className="flex gap-4 mt-1 flex-wrap">
+                        {currentPrice !== null && (
+                          <div className="flex items-center gap-2 px-2 py-1 bg-white/50 rounded-lg">
+                            <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
+                            <span className="text-xs font-semibold text-black">
+                              ${currentPrice.toLocaleString(undefined, { maximumFractionDigits: 6 })}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Row 2: Order Details and Cancel Button */}
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-4">
                           {size !== undefined && (
-                            <span className="text-xs text-black/50">Size: <span className="font-semibold text-black">${Number(size).toLocaleString()}</span></span>
+                            <div>
+                              <span className="text-xs text-black/50">Size</span>
+                              <p className="text-sm font-semibold text-black">${Number(size).toLocaleString()}</p>
+                            </div>
                           )}
                           {orderPrice !== undefined && (
-                            <span className="text-xs text-black/50">@ <span className="font-semibold text-black">${orderPrice}</span></span>
+                            <div>
+                              <span className="text-xs text-black/50">Order Price</span>
+                              <p className="text-sm font-semibold text-black">${orderPrice}</p>
+                            </div>
                           )}
                         </div>
+                        <button className="btn-danger px-3 py-1.5 text-xs whitespace-nowrap">
+                          Cancel
+                        </button>
                       </div>
-                      <button className="btn-danger px-4 py-2 text-xs">
-                        Cancel
-                      </button>
                     </div>
                   )
                 })}
