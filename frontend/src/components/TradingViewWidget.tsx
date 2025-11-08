@@ -6,12 +6,14 @@ interface TradingViewWidgetProps {
   symbol: string;
   theme?: "light" | "dark";
   fullscreen?: boolean;
+  showSideToolbar?: boolean;
 }
 
 function TradingViewWidget({
   symbol,
   theme = "light",
   fullscreen = false,
+  showSideToolbar = false,
 }: TradingViewWidgetProps) {
   const container = useRef<HTMLDivElement>(null);
 
@@ -40,7 +42,8 @@ function TradingViewWidget({
       theme,
       style: "1",
       hide_top_toolbar: fullscreen ? false : true,
-      hide_side_toolbar: fullscreen ? false : true, 
+      hide_side_toolbar: showSideToolbar ? false : true, 
+      hide_compare_symbol: true,
       allow_symbol_change: false,
       save_image: false,
       calendar: false,
@@ -49,7 +52,7 @@ function TradingViewWidget({
         theme === "dark" ? "rgba(0,0,0,1)" : "rgba(255,255,255,1)",
       support_host: "https://www.tradingview.com",
       enable_publishing: false,
-      withdateranges: fullscreen ? true : false,
+      withdateranges: false,
     });
 
     const widgetContainer = document.createElement("div");
@@ -67,7 +70,7 @@ function TradingViewWidget({
       console.log('[TradingViewWidget] Cleaning up widget')
       if (container.current) container.current.innerHTML = "";
     };
-  }, [symbol, theme, fullscreen]);
+  }, [symbol, theme, fullscreen, showSideToolbar]);
 
   console.log('[TradingViewWidget] Rendering container with style:', { 
     height: fullscreen ? "100%" : "500px", 
@@ -81,7 +84,9 @@ function TradingViewWidget({
       ref={container}
       style={{ 
         height: fullscreen ? "100%" : "500px", 
-        width: "100%"
+        width: "100%",
+        margin: 0,
+        padding: 0
       }}
     />
   );

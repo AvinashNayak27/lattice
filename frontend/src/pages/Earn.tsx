@@ -14,14 +14,14 @@ export default function Earn() {
           initial={{ scale: 0 }}
           animate={{ scale: 1 }}
           transition={{ delay: 0.2, type: "spring", stiffness: 200 }}
-          className="w-20 h-20 bg-gradient-to-br from-purple-500 to-blue-500 rounded-2xl flex items-center justify-center mx-auto mb-6"
+          className="w-20 h-20 bg-gradient-to-br from-purple-500 to-blue-500 rounded-2xl flex items-center justify-center mx-auto mb-4"
         >
           <Rocket className="w-10 h-10 text-white" />
         </motion.div>
         
         <h2 className="text-3xl font-bold text-black mb-4">Coming Soon</h2>
         
-        <p className="text-black/60 mb-6 text-lg">
+        <p className="text-black/60 mb-4 text-lg">
           Launching staking and vault features soon!
         </p>
         

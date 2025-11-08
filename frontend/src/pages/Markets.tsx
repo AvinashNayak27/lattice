@@ -1,7 +1,9 @@
+
 import { motion } from 'framer-motion'
-import { TrendingUp, ArrowUpRight, Search } from 'lucide-react'
+import { TrendingUp, ArrowUpRight } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { triggerHaptic } from '../utils/haptics'
 
 type PairInfo = {
   name: string
@@ -27,9 +29,20 @@ export default function Markets({ pairs, onPairSelect }: MarketsProps) {
   useEffect(() => {
     if (pairs.length === 0) return
 
+    // Filter pairs by groupIndex (0, 1, 4) and exclude delisted
+    const allowedPairs = pairs.filter(pair => {
+      const groupIndex = pair.raw?.groupIndex
+      if (groupIndex === undefined || ![0, 1, 4, 5].includes(groupIndex)) return false
+      // Exclude pairs with "delisted" in from field (case insensitive)
+      if (pair.from?.toLowerCase().includes('delisted')) return false
+      return true
+    })
+
+    if (allowedPairs.length === 0) return
+
     // Create a map of feedId to pair indices for quick lookup
     const feedIdToPairIndices = new Map<string, number[]>()
-    pairs.forEach((pair) => {
+    allowedPairs.forEach((pair) => {
       const feedId = pair.raw?.feed?.feedId
       if (feedId) {
         if (!feedIdToPairIndices.has(feedId)) {
@@ -46,7 +59,7 @@ export default function Markets({ pairs, onPairSelect }: MarketsProps) {
     if (feedIds.length === 0) return
 
     // Setup WebSocket for real-time updates
-    const wsUrl = `wss://hermes.pyth.network/ws`
+    const wsUrl = 'wss://hermes.pyth.network/ws'
     let ws: WebSocket | null = null
     let reconnectTimeout: NodeJS.Timeout | null = null
 
@@ -73,7 +86,7 @@ export default function Markets({ pairs, onPairSelect }: MarketsProps) {
               if (feedId && p && typeof p?.price === 'string' && typeof p?.expo === 'number') {
                 const price = Number(p.price) * Math.pow(10, p.expo)
                 const pairIndices = feedIdToPairIndices.get(feedId)
-                console.log('pairIndices', pairIndices)
+                // console.log('pairIndices', pairIndices)
                 
                 if (pairIndices) {
                   const priceUpdates: Record<number, number> = {}
@@ -145,104 +158,122 @@ export default function Markets({ pairs, onPairSelect }: MarketsProps) {
     fetchHistoricalPrices()
   }, [])
 
-  // Filter pairs based on search
-  const filteredPairs = pairs.filter(pair => 
-    pair.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    pair.from?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    pair.to?.toLowerCase().includes(searchQuery.toLowerCase())
-  )
+  // Filter pairs by groupIndex (0, 1, 4) and search
+  const filteredPairs = pairs.filter(pair => {
+    const groupIndex = pair.raw?.groupIndex
+    const allowedGroupIndices = [0, 1, 4, 5 ]
+    const matchesGroupIndex = groupIndex !== undefined && allowedGroupIndices.includes(groupIndex)
+    
+    if (!matchesGroupIndex) return false
+    
+    // Exclude pairs with "delisted" in from field (case insensitive)
+    if (pair.from?.toLowerCase().includes('delisted')) return false
+    
+    return pair.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      pair.from?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      pair.to?.toLowerCase().includes(searchQuery.toLowerCase())
+  })
 
   // Show only first 10 initially
   const displayedPairs = showAll ? filteredPairs : filteredPairs.slice(0, 10)
 
   const handlePairClick = (pair: PairInfo) => {
+    triggerHaptic('light')
     onPairSelect(pair.index)
     navigate(`/markets/${pair.index}`)
-  }
-
+  } 
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -20 }}
-      className="space-y-6 mb-20 md:mb-6"
+      className="space-y-6 mb-20 md:mb-4"
     >
       {/* Markets Grid */}
       <div className="card">
-        <div className="flex flex-col gap-4 mb-6">
+        <div className="flex flex-col gap-4 mb-4">
           <div className="flex justify-between items-center">
             <h3 className="text-lg font-bold text-black">Available Markets</h3>
             <span className="text-xs text-black/50">
               Showing {displayedPairs.length} of {filteredPairs.length}
             </span>
           </div>
-          
-          {/* Search Bar */}
-          <div className="relative">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-black/40" />
-            <input
-              type="text"
-              placeholder="Search markets (ETH, BTC, etc.)"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-12 pr-4 py-3 bg-black/5 border border-black/10 rounded-2xl text-sm text-black placeholder:text-black/40 focus:outline-none focus:ring-2 focus:ring-black/20 transition-all"
-            />
-          </div>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+        <div className="space-y-2">
           {displayedPairs.map((pair: PairInfo) => {
             const price = pairPrices[pair.index]
             const historicalPrice = historicalPrices[pair.index]
             const priceChange = price && historicalPrice 
               ? ((price - historicalPrice) / historicalPrice) * 100 
               : 0
+            const formattedPrice = typeof price === 'number'
+              ? price.toLocaleString(undefined, { maximumFractionDigits: price < 100 ? 5 : 2 })
+              : ''
 
             return (
               <motion.div
                 key={pair.index}
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                whileTap={{ scale: 0.99 }}
                 onClick={() => handlePairClick(pair)}
-                className="p-4 rounded-2xl border-2 border-black/10 hover:border-black/30 cursor-pointer transition-all bg-gradient-to-br from-white to-gray-50"
+                className="p-3 rounded-2xl border border-black/10 bg-white shadow-sm active:scale-[0.99] transition-transform cursor-pointer"
               >
-                <div className="flex justify-between items-start mb-3">
-                  <div>
-                    <h4 className="font-bold text-base text-black">{pair.name}</h4>
-                    <span className="text-xs text-black/40">#{pair.index}</span>
-                  </div>
-                  {price && (
-                    <div className="px-2 py-1 bg-green-500/10 rounded-lg">
-                      <span className="text-xs font-semibold text-green-600">LIVE</span>
+                <div className="flex flex-row items-center gap-3 sm:gap-4">
+                  {/* Asset Info */}
+                  <div className="flex items-center gap-3 flex-1">
+                    {pair.from ? (
+                      <img
+                        src={`https://www.avantisfi.com/images/pairs/crypto/${pair.from}.svg`}
+                        alt={pair.from}
+                        className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-white p-1 flex-shrink-0"
+                        onError={(e) => {
+                          e.currentTarget.style.display = 'none'
+                        }}
+                      />
+                    ) : (
+                      <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-black/10 flex items-center justify-center flex-shrink-0">
+                        <TrendingUp className="w-4 h-4 sm:w-5 sm:h-5 text-black/30" />
+                      </div>
+                    )}
+                    
+                    <div className="flex-1 min-w-0">
+                      <div className="flex flex-wrap items-center gap-1 sm:gap-2 mb-1">
+                        <h4 className="font-bold text-black text-sm sm:text-base">
+                          {pair.name}
+                        </h4>
+                        {pair.raw?.leverages?.maxLeverage && (
+                          <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-black/10 text-black/70">
+                            {pair.raw.leverages.maxLeverage}x
+                          </span>
+                        )}
+                      </div>
+                      {/* Moved 24h change to the right under price */}
                     </div>
-                  )}
+                  </div>
+
+                  {/* Price */}
+                  <div className="text-right">
+                    {price ? (
+                      <>
+                        <p className="text-base sm:text-lg font-bold text-black">
+                          ${formattedPrice}
+                        </p>
+                        <div className="flex items-center gap-1 justify-end mt-1">
+                          <ArrowUpRight className={`w-3 h-3 ${priceChange >= 0 ? 'text-green-500' : 'text-red-500 rotate-90'}`} />
+                          <span className={`text-xs font-semibold ${priceChange >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                            {priceChange >= 0 ? '+' : ''}{priceChange.toFixed(2)}%
+                          </span>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="space-y-1">
+                        <div className="h-5 bg-black/5 rounded animate-pulse w-20" />
+                        <div className="h-4 bg-black/5 rounded animate-pulse w-12 ml-auto" />
+                      </div>
+                    )}
+                  </div>
                 </div>
-
-                {price ? (
-                  <div className="mt-3">
-                    <p className="text-xl font-bold text-black">
-                      ${price.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                    </p>
-                    <div className="flex items-center gap-1 mt-1">
-                      <ArrowUpRight className={`w-3 h-3 ${priceChange >= 0 ? 'text-green-500' : 'text-red-500 rotate-90'}`} />
-                      <span className={`text-xs ${priceChange >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                        {priceChange >= 0 ? '+' : ''}{priceChange.toFixed(2)}%
-                      </span>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="mt-3">
-                    <div className="h-6 bg-black/5 rounded animate-pulse" />
-                    <div className="h-4 bg-black/5 rounded mt-2 w-16 animate-pulse" />
-                  </div>
-                )}
-
-                {pair.raw?.leverages && (
-                  <div className="mt-3 pt-3 border-t border-black/10">
-                    <span className="text-xs text-black/50">
-                      Max Leverage: <span className="font-semibold text-black">{pair.raw.leverages.maxLeverage}x</span>
-                    </span>
-                  </div>
-                )}
               </motion.div>
             )
           })}
@@ -250,7 +281,7 @@ export default function Markets({ pairs, onPairSelect }: MarketsProps) {
 
         {/* Show More Button */}
         {!showAll && filteredPairs.length > 10 && (
-          <div className="mt-6 text-center">
+          <div className="mt-4 text-center">
             <button
               onClick={() => setShowAll(true)}
               className="btn-secondary"
@@ -260,50 +291,6 @@ export default function Markets({ pairs, onPairSelect }: MarketsProps) {
           </div>
         )}
       </div>
-
-      {/* Popular Pairs */}
-      {/* <div className="card">
-        <h3 className="text-lg font-bold text-black mb-4">Trending This Week</h3>
-        <div className="space-y-3">
-          {pairs.slice(0, 5).map((pair, index) => {
-            const price = pairPrices[pair.index]
-            const priceChange = Math.random() * 10 - 5
-
-            return (
-              <div
-                key={pair.index}
-                className="flex items-center justify-between p-3 bg-black/5 rounded-xl hover:bg-black/10 transition-all cursor-pointer"
-                onClick={() => handlePairClick(pair)}
-              >
-                <div className="flex items-center gap-3">
-                  <span className="text-xs font-bold text-black/40">#{index + 1}</span>
-                  <div>
-                    <p className="font-semibold text-sm text-black">{pair.name}</p>
-                    <p className="text-xs text-black/50">24h Vol: $2.4M</p>
-                  </div>
-                </div>
-                <div className="text-right">
-                  {price ? (
-                    <>
-                      <p className="font-semibold text-sm text-black">
-                        ${price.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                      </p>
-                      <div className="flex items-center gap-1 justify-end">
-                        <ArrowUpRight className={`w-3 h-3 ${priceChange >= 0 ? 'text-green-600' : 'text-red-600 rotate-90'}`} />
-                        <span className={`text-xs ${priceChange >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                          {priceChange >= 0 ? '+' : ''}{priceChange.toFixed(2)}%
-                        </span>
-                      </div>
-                    </>
-                  ) : (
-                    <div className="h-4 w-20 bg-black/5 rounded animate-pulse" />
-                  )}
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      </div> */}
     </motion.div>
   )
 }

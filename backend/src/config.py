@@ -10,6 +10,7 @@ class Settings(BaseSettings):
         "http://localhost:3000",
         "http://127.0.0.1:3000",
         "https://latticefi.vercel.app",
+        "https://3fe56a7c50e7.ngrok-free.app",
     ]
 
     class Config:

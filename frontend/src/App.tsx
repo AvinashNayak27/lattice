@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { BrowserRouter as Router, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom'
+import { BrowserRouter as Router, Routes, Route, Link, useLocation, Navigate, useNavigate } from 'react-router-dom'
 import { ConnectButton } from '@rainbow-me/rainbowkit'
 import { useAccount, useSendTransaction, useDisconnect, useWaitForTransactionReceipt, useReadContract } from 'wagmi'
 import { formatUnits } from 'viem'
@@ -16,7 +16,9 @@ import {
   Bell,
   Network,
   ExternalLink,
-  Loader2
+  Loader2,
+  Search,
+  ChevronLeft
 } from 'lucide-react' 
 
 // Pages
@@ -25,7 +27,9 @@ import MarketDetail from './pages/MarketDetail'
 import Earn from './pages/Earn'
 import Profile from './pages/Profile'
 import Portfolio from './pages/Portfolio'
+import SearchMarketsModal from './components/SearchMarketsModal'
 import sdk from "@farcaster/miniapp-sdk";
+import { triggerHaptic } from './utils/haptics';
 
 // Environment variables
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'https://avantis-backend.vercel.app'
@@ -113,7 +117,7 @@ function OnboardingExperience({ onComplete }: { onComplete: () => void }) {
           initial={{ scale: 0 }}
           animate={{ scale: 1 }}
           transition={{ delay: 0.2, type: "spring" }}
-          className="flex justify-center mb-6 text-black"
+          className="flex justify-center mb-4 text-black"
         >
           {currentStep.icon}
         </motion.div>
@@ -131,7 +135,7 @@ function OnboardingExperience({ onComplete }: { onComplete: () => void }) {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.4 }}
-          className="text-black/70 text-base mb-6 leading-relaxed"
+          className="text-black/70 text-base mb-4 leading-relaxed"
         >
           {currentStep.description}
         </motion.p>
@@ -274,11 +278,12 @@ function CustomConnectButton() {
 }
 
 // Navigation button component
-function NavButton({ to, icon, label, isActive }: { to: string; icon: React.ReactNode; label: string; isActive: boolean }) {
+function NavButton({ to, icon, label, isActive, onClick }: { to: string; icon: React.ReactNode; label: string; isActive: boolean; onClick?: () => void }) {
   return (
     <Link to={to}>
       <button
         className={`nav-item ${isActive ? 'nav-item-active' : 'nav-item-inactive'}`}
+        onClick={onClick}
       >
         {icon}
         <span className="text-xs font-semibold">{label}</span>
@@ -294,11 +299,11 @@ function DesktopNavButton({ to, icon, label, isActive }: { to: string; icon: Rea
       <button
         className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-2xl transition-all duration-300 text-sm ${
           isActive
-            ? 'bg-black text-white shadow-lg'
-            : 'text-black/70 hover:bg-black/5'
+            ? 'text-black'
+            : 'text-gray-500 hover:text-gray-700'
         }`}
       >
-        {icon}
+        <span className="flex items-center">{icon}</span>
         <span className="font-semibold">{label}</span>
       </button>
     </Link>
@@ -310,6 +315,7 @@ function AppContent() {
   const { sendTransactionAsync } = useSendTransaction()
   const { disconnect } = useDisconnect()
   const location = useLocation()
+  const navigate = useNavigate()
 
   // USDC Balance Hook
   const { data: usdcBalance } = useReadContract({
@@ -344,17 +350,27 @@ function AppContent() {
     return !localStorage.getItem('lattice_onboarding_seen')
   })
 
+  const [userData, setUserData] = useState<{fid: number; username?: string; displayName?: string; pfpUrl?: string} | null>(null)
+  const [showSearchMarkets, setShowSearchMarkets] = useState(false)
+  const [isTradeModalOpen, setIsTradeModalOpen] = useState(false)
 
-  useEffect(() => {
-    const init = async () => {
-      await sdk.actions.ready({
-        disableNativeGestures: true,
-      });
-      const isInMiniApp = await sdk.isInMiniApp();
-      console.log('isInMiniApp', isInMiniApp);
-    };
-    init();
-  }, []);
+    useEffect(() => {
+      const init = async () => {
+        await sdk.actions.ready({
+          disableNativeGestures: true,
+        });
+        const isInMiniApp = await sdk.isInMiniApp();
+        console.log('isInMiniApp', isInMiniApp);
+        try {
+          const ctx = await sdk.context;
+          const user = ctx.user;
+          setUserData(user);
+        } catch (e) {
+          console.error('Failed to get user context', e);
+        }
+      };
+      init();
+    }, []);
 
   const addNotification = (type: 'success' | 'error' | 'info' | 'pending' | 'confirming' | 'preparing', message: string, txHash?: string, id?: string) => {
     const notifId = id || Math.random().toString(36).substr(2, 9)
@@ -573,7 +589,7 @@ function AppContent() {
     }
   }, [isConnected, trades, pendingOrders, pairs])
 
-  const buildAndSend = async (path: string, body: any, successMsg: string) => {
+  const buildAndSend = async (path: string, body: any, successMsg: string): Promise<'success' | 'rejected' | 'error'> => {
     setLoading(true)
     const notifId = Math.random().toString(36).substr(2, 9)
     
@@ -594,31 +610,44 @@ function AppContent() {
       // Update to pending when backend responds
       addNotification('pending', 'Waiting for wallet approval...', undefined, notifId)
 
-      const txHash = await sendTransactionAsync({
-        to: tx.to,
-        data: tx.data,
-        value: valueToSend,
-      })
+      try {
+        const txHash = await sendTransactionAsync({
+          to: tx.to,
+          data: tx.data,
+          value: valueToSend,
+        })
 
-      // Update to confirming with tx hash
-      addNotification('confirming', 'Confirming transaction...', txHash, notifId)
+        // Update to confirming with tx hash
+        addNotification('confirming', 'Confirming transaction...', txHash, notifId)
 
-      // Wait for confirmation (optional - can be done in background)
-      // The transaction is considered submitted at this point
-      setTimeout(() => {
-        addNotification('success', successMsg, txHash, notifId)
-      }, 2000)
+        // Wait for confirmation (optional - can be done in background)
+        // The transaction is considered submitted at this point
+        setTimeout(() => {
+          addNotification('success', successMsg, txHash, notifId)
+        }, 2000)
+
+        return 'success'
+      } catch (txError: any) {
+        // User rejected the transaction
+        if (txError?.message?.includes('rejected') || txError?.message?.includes('denied') || txError?.code === 4001) {
+          addNotification('error', 'Transaction rejected', undefined, notifId)
+          return 'rejected'
+        }
+        throw txError
+      }
 
     } catch (e: any) {
       console.error(e)
       addNotification('error', e?.response?.data?.details ?? e.message.split('.')[0] ?? 'Transaction failed', undefined, notifId)
+      return 'error'
     } finally {
       setLoading(false)
     }
   }
 
-  const onOpenTrade = async () => {
-    if (!isConnected || !address || selectedPairIndex === null) return
+  const onOpenTrade = async (): Promise<'success' | 'rejected' | 'error'> => {
+    if (!isConnected || !address || selectedPairIndex === null) return 'error'
+    triggerHaptic('success')
 
     const collateralAmount = Number(collateral)
 
@@ -638,11 +667,12 @@ function AppContent() {
     } else {
       body.pair_index = selectedPairIndex
     }
-    await buildAndSend('/trades/open', body, 'Trade opened successfully!')
+    return await buildAndSend('/trades/open', body, 'Trade opened successfully!')
   }
 
   const onCloseTrade = async (pairIndex: number, tradeIndex: number) => {
     if (!isConnected || !address) return
+    triggerHaptic('medium')
     await buildAndSend(
       '/trades/close',
       {
@@ -657,6 +687,7 @@ function AppContent() {
 
   const onUpdateTpSl = async (pairIndex: number, tradeIndex: number, newTp: number, newSl: number) => {
     if (!isConnected || !address) return
+    triggerHaptic('success')
     await buildAndSend(
       '/trades/tp-sl',
       {
@@ -677,6 +708,11 @@ function AppContent() {
   }
 
   const currentPath = location.pathname
+  // Get current pair for market detail pages by extracting ID from pathname
+  const isMarketDetailPage = currentPath.startsWith('/markets/') && currentPath !== '/markets'
+  const marketMatch = currentPath.match(/^\/markets\/(\d+)$/)
+  const currentPairId = marketMatch ? parseInt(marketMatch[1], 10) : null
+  const currentPair = currentPairId !== null && pairs.length > 0 ? pairs.find(p => p.index === currentPairId) : null
 
   return (
     <>
@@ -746,21 +782,71 @@ function AppContent() {
         <div className="md:hidden">
           {/* Mobile Header */}
           <motion.header
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
             className="mobile-header px-4 py-3"
           >
             <div className="flex items-center justify-between">
-              <div>
-                <h1 className="text-3xl font-bold text-black flex items-center gap-2">
-                  <Network className="w-6 h-6" />
+              {/* Left: Profile Icon or Back Arrow */}
+              {currentPath.startsWith('/markets/') ? (
+                <button
+                  onClick={() => navigate('/markets')}
+                  className="w-10 h-10 rounded-xl bg-white shadow-md flex items-center justify-center hover:bg-black/5 transition-colors"
+                >
+                  <ChevronLeft className="w-5 h-5 text-black" />
+                </button>
+              ) : (
+                <button
+                  onClick={() => navigate('/profile')}
+                  className="w-10 h-10 rounded-full overflow-hidden flex-shrink-0 shadow-md p-0 border-0 bg-transparent"
+                  style={{appearance: "none"}}
+                  aria-label="Go to profile"
+                >
+                  {userData?.pfpUrl ? (
+                    <img 
+                      src={userData.pfpUrl} 
+                      alt={userData.displayName || 'Profile'} 
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <div className="w-full h-full bg-[#81D8D0]"></div>
+                  )}
+                </button>
+              )}
+              
+              {/* Center: Asset Logo & Name or Lattice Logo */}
+              {isMarketDetailPage && currentPair ? (
+                <div className="flex items-center gap-3">
+                  <img 
+                    src={`https://www.avantisfi.com/images/pairs/crypto/${currentPair.from}.svg`}
+                    alt={currentPair.from}
+                    className="w-10 h-10 rounded-full"
+                    onError={(e) => {
+                      // Fallback to a placeholder if image fails to load
+                      const target = e.target as HTMLImageElement;
+                      target.style.display = 'none';
+                    }}
+                  />
+                  <h1 className="text-2xl font-bold text-black">
+                    {currentPair.from}/USD
+                  </h1>
+                </div>
+              ) : (
+                <h1 
+                  className="text-2xl font-bold text-black/70"
+                  style={{ fontFamily: 'Orbitron, sans-serif' }}
+                >
                   Lattice
                 </h1>
-                <p className="text-[12px] text-black/50 mt-0.5">A web of positions, insights, reputation</p>
-              </div>
-              <div className="flex items-center gap-2">
-                <CustomConnectButton/>
-              </div>
+              )}
+              
+              {/* Right: Search Button */}
+              <button
+                onClick={() => setShowSearchMarkets(true)}
+                className="w-10 h-10 rounded-xl bg-white shadow-md flex items-center justify-center hover:bg-black/5 transition-colors"
+              >
+                <Search className="w-5 h-5 text-black" />
+              </button>
             </div>
           </motion.header>
 
@@ -796,6 +882,7 @@ function AppContent() {
                     isZeroFee={isZeroFee}
                     setIsZeroFee={setIsZeroFee}
                     usdcBalance={usdcBalance}
+                    onTradeModalChange={setIsTradeModalOpen}
                   />
                 } />
                 <Route path="/portfolio" element={
@@ -811,49 +898,62 @@ function AppContent() {
                     realtimePrices={realtimePrices}
                   />
                 } />
-                <Route path="/earn" element={<Earn />} />
+                {/* <Route path="/earn" element={<Earn />} /> */}
                 <Route path="/profile" element={<Profile />} />
               </Routes>
             </AnimatePresence>
           </div>
 
           {/* Mobile Bottom Navigation */}
-          <nav className="bottom-nav">
+          {!isTradeModalOpen && (
+            <nav className="bottom-nav">
             <div className="flex justify-around items-center max-w-screen-sm mx-auto">
               <NavButton
                 to="/markets"
                 icon={<TrendingUp className="w-5 h-5" />}
                 label="Markets"
                 isActive={currentPath === '/markets'}
+                onClick={() => triggerHaptic('selection')}
               />
               <NavButton
                 to="/portfolio"
                 icon={<Wallet className="w-5 h-5" />}
                 label="Portfolio"
                 isActive={currentPath === '/portfolio'}
+                onClick={() => triggerHaptic('selection')}
               />
-              <NavButton
+              {/* <NavButton
                 to="/earn"
                 icon={<DollarSign className="w-5 h-5" />}
                 label="Earn"
                 isActive={currentPath === '/earn'}
-              />
+              /> */}
               <NavButton
                 to="/profile"
                 icon={<User className="w-5 h-5" />}
                 label="Profile"
                 isActive={currentPath === '/profile'}
+                onClick={() => triggerHaptic('selection')}
               />
             </div>
           </nav>
+          )}
+
+          {/* Search Markets Modal */}
+          <SearchMarketsModal
+            isOpen={showSearchMarkets}
+            onClose={() => setShowSearchMarkets(false)}
+            pairs={pairs}
+            onPairSelect={setSelectedPairIndex}
+          />
         </div>
 
         {/* Desktop Layout */}
         <div className="hidden md:block">
           {/* Desktop Sidebar */}
-          <div className="fixed left-0 top-0 h-screen w-64 glass-card m-4 p-6 flex flex-col rounded-3xl">
+          <div className="fixed left-0 top-0 h-screen w-64 glass-card m-4 p-4 flex flex-col rounded-3xl">
             <div className="mb-8">
-              <h1 className="text-3xl sm:text-2xl font-bold text-black flex items-center gap-2">
+              <h1 className="text-3xl sm:text-2xl font-bold text-black flex items-center gap-2" style={{ fontFamily: 'Orbitron, sans-serif' }}>
                 <Network className="w-8 h-8 sm:w-7 sm:h-7" />
                 Lattice
               </h1>
@@ -957,6 +1057,7 @@ function AppContent() {
                     isZeroFee={isZeroFee}
                     setIsZeroFee={setIsZeroFee}
                     usdcBalance={usdcBalance}
+                    onTradeModalChange={setIsTradeModalOpen}
                   />
                 } />
                 <Route path="/portfolio" element={
@@ -972,7 +1073,7 @@ function AppContent() {
                     realtimePrices={realtimePrices}
                   />
                 } />
-                <Route path="/earn" element={<Earn />} />
+                {/* <Route path="/earn" element={<Earn />} /> */}
                 <Route path="/profile" element={<Profile />} />
               </Routes>
             </AnimatePresence>

@@ -1,15 +1,18 @@
 import { motion, AnimatePresence } from 'framer-motion'
 import { X } from 'lucide-react'
 import { useEffect } from 'react'
+import { triggerHaptic } from '../utils/haptics'
+import { createPortal } from 'react-dom'
 
 interface BottomSheetProps {
   isOpen: boolean
   onClose: () => void
-  title: string
+  title: string | React.ReactNode
   children: React.ReactNode
+  zIndexClass?: string
 }
 
-export default function BottomSheet({ isOpen, onClose, title, children }: BottomSheetProps) {
+export default function BottomSheet({ isOpen, onClose, title, children, zIndexClass = 'z-[100]' }: BottomSheetProps) {
   useEffect(() => {
     if (isOpen) {
       document.body.style.overflow = 'hidden'
@@ -21,7 +24,13 @@ export default function BottomSheet({ isOpen, onClose, title, children }: Bottom
     }
   }, [isOpen])
 
-  return (
+  const handleClose = () => {
+    triggerHaptic('light')
+    onClose()
+  }
+
+  return createPortal(
+    (
     <AnimatePresence>
       {isOpen && (
         <>
@@ -30,8 +39,8 @@ export default function BottomSheet({ isOpen, onClose, title, children }: Bottom
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            onClick={onClose}
-            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50"
+            onClick={handleClose}
+            className={`fixed inset-0 bg-black/50 backdrop-blur-sm ${zIndexClass}`}
           />
 
           {/* Bottom Sheet */}
@@ -40,7 +49,7 @@ export default function BottomSheet({ isOpen, onClose, title, children }: Bottom
             animate={{ y: 0 }}
             exit={{ y: '100%' }}
             transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-            className="fixed bottom-0 left-0 right-0 z-50 bg-white rounded-t-3xl shadow-2xl max-h-[92vh] overflow-hidden"
+            className={`fixed bottom-0 left-0 right-0 ${zIndexClass} bg-white rounded-t-3xl shadow-2xl max-h-[92vh] overflow-hidden`}
           >
             {/* Handle */}
             <div className="flex justify-center py-3">
@@ -48,24 +57,25 @@ export default function BottomSheet({ isOpen, onClose, title, children }: Bottom
             </div>
 
             {/* Header */}
-            <div className="flex items-center justify-between px-6 pb-4 border-b border-black/10">
-              <h3 className="text-lg font-bold text-black">{title}</h3>
+            <div className="flex items-center px-3 pb-4 border-b border-black/10">
+              <div className="flex-1">{title}</div>
               <button
-                onClick={onClose}
-                className="p-2 hover:bg-black/5 rounded-full transition-colors"
+                onClick={handleClose}
+                className="p-2 hover:bg-black/5 rounded-full transition-colors active:scale-95 ml-2 flex-shrink-0"
               >
                 <X className="w-5 h-5 text-black/70" />
               </button>
             </div>
 
             {/* Content */}
-            <div className="overflow-y-auto max-h-[calc(92vh-80px)] px-6 py-6">
+            <div className="overflow-y-auto max-h-[calc(92vh-80px)] p-3 pb-5">
               {children}
             </div>
           </motion.div>
         </>
       )}
     </AnimatePresence>
+    ),
+    document.body
   )
 }
-
